@@ -28,6 +28,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       contactConsent,
     } = req.body
 
+    // Basic validation to ensure this is a legitimate feedback submission
+    if (!feedbackType || (feedbackType === "quick" && rating === undefined)) {
+      return res.status(400).json({ success: false, message: "Invalid feedback data" })
+    }
+
     const { data, error } = await supabase
       .from("feedback")
       .insert({
