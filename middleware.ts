@@ -12,9 +12,10 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next()
   }
 
-  // Redirect /admin/login to /login to avoid conflicts
-  if (request.nextUrl.pathname === "/admin/login") {
-    return NextResponse.redirect(new URL("/login", request.url))
+  // Block access to login and debug-auth pages
+  if (request.nextUrl.pathname === "/login" || request.nextUrl.pathname === "/debug-auth") {
+    // Redirect to home page
+    return NextResponse.redirect(new URL("/", request.url))
   }
 
   // Only check auth for admin routes
@@ -34,8 +35,8 @@ export async function middleware(request: NextRequest) {
       } = await supabase.auth.getSession()
 
       if (!session) {
-        // Redirect to login page if not authenticated
-        return NextResponse.redirect(new URL("/login", request.url))
+        // Redirect to home page instead of login
+        return NextResponse.redirect(new URL("/", request.url))
       }
 
       // Check if user is an admin
@@ -46,14 +47,14 @@ export async function middleware(request: NextRequest) {
         .single()
 
       if (error || !userData || !userData.is_admin) {
-        // Redirect to login page if not admin
-        return NextResponse.redirect(new URL("/login", request.url))
+        // Redirect to home page if not admin
+        return NextResponse.redirect(new URL("/", request.url))
       }
 
       return NextResponse.next()
     } catch (error) {
       console.error("Middleware error:", error)
-      return NextResponse.redirect(new URL("/login", request.url))
+      return NextResponse.redirect(new URL("/", request.url))
     }
   }
 
@@ -62,5 +63,5 @@ export async function middleware(request: NextRequest) {
 
 // Specify the paths this middleware should run on
 export const config = {
-  matcher: ["/admin/:path*", "/login"],
+  matcher: ["/admin/:path*", "/login", "/debug-auth"],
 }
