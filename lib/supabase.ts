@@ -10,10 +10,21 @@ export const createBrowserSupabaseClient = () => {
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
   if (!supabaseUrl || !supabaseAnonKey) {
+    console.error("Missing Supabase environment variables")
     throw new Error("Missing Supabase environment variables")
   }
 
-  clientInstance = createClient(supabaseUrl, supabaseAnonKey)
+  console.log("Creating new Supabase client with URL:", supabaseUrl)
+
+  clientInstance = createClient(supabaseUrl, supabaseAnonKey, {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+      storageKey: "supabase-auth-token",
+    },
+  })
+
   return clientInstance
 }
 
@@ -23,6 +34,7 @@ export const createServerSupabaseClient = () => {
   const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
   if (!supabaseUrl || !supabaseKey) {
+    console.error("Missing Supabase environment variables")
     throw new Error("Missing Supabase environment variables")
   }
 

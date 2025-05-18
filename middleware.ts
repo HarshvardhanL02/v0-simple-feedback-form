@@ -12,13 +12,11 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next()
   }
 
-  // Redirect /admin/login to /login to avoid conflicts
-  if (request.nextUrl.pathname === "/admin/login") {
-    return NextResponse.redirect(new URL("/login", request.url))
+  // Block access to login and debug-auth pages
+  if (request.nextUrl.pathname === "/login" || request.nextUrl.pathname === "/debug-auth") {
+    // Redirect to home page
+    return NextResponse.redirect(new URL("/", request.url))
   }
-
-  // Create a response to modify
-  const response = NextResponse.next()
 
   // Only check auth for admin routes
   if (request.nextUrl.pathname.startsWith("/admin")) {
@@ -32,28 +30,38 @@ export async function middleware(request: NextRequest) {
       })
 
       // Get the session from the cookie
-      const authCookie =
-        request.cookies.get("sb-access-token")?.value ||
-        request.cookies.get("sb-refresh-token")?.value ||
-        request.cookies.get("supabase-auth-token")?.value
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
 
-      if (!authCookie) {
-        console.log("No auth cookie found, redirecting to login")
-        return NextResponse.redirect(new URL("/login", request.url))
+      if (!session) {
+        // Redirect to home page instead of login
+        return NextResponse.redirect(new URL("/", request.url))
       }
 
-      // Let the client-side handle authentication
-      return response
+      // Check if user is an admin
+      const { data: userData, error } = await supabase
+        .from("users")
+        .select("*")
+        .eq("email", session.user.email)
+        .single()
+
+      if (error || !userData || !userData.is_admin) {
+        // Redirect to home page if not admin
+        return NextResponse.redirect(new URL("/", request.url))
+      }
+
+      return NextResponse.next()
     } catch (error) {
       console.error("Middleware error:", error)
-      return NextResponse.redirect(new URL("/login", request.url))
+      return NextResponse.redirect(new URL("/", request.url))
     }
   }
 
-  return response
+  return NextResponse.next()
 }
 
 // Specify the paths this middleware should run on
 export const config = {
-  matcher: ["/admin/:path*", "/login"],
+  matcher: ["/admin/:path*", "/login", "/debug-auth"],
 }

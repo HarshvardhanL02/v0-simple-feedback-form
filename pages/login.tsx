@@ -10,6 +10,24 @@ import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/ui/separator"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 
+const directLogin = async (email: string, password: string) => {
+  try {
+    const response = await fetch("/api/direct-login", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ email, password }),
+    })
+
+    const data = await response.json()
+    return data
+  } catch (error: any) {
+    console.error("Direct login error:", error)
+    return { success: false, message: `Direct login failed: ${error.message}` }
+  }
+}
+
 export default function AdminLogin() {
   const [isLoading, setIsLoading] = useState(false)
   const [isCheckingAuth, setIsCheckingAuth] = useState(true)
@@ -17,26 +35,25 @@ export default function AdminLogin() {
   const [success, setSuccess] = useState("")
   const [isCreatingTestUser, setIsCreatingTestUser] = useState(false)
   const [isResettingPassword, setIsResettingPassword] = useState(false)
+  const [debugInfo, setDebugInfo] = useState<any>(null)
 
   // Check if user is already authenticated
   useEffect(() => {
     async function checkAuth() {
       try {
         const supabase = createBrowserSupabaseClient()
+        console.log("Checking auth in login page...")
 
         // Get the current session
-        const {
-          data: { session },
-        } = await supabase.auth.getSession()
+        const { data: sessionData } = await supabase.auth.getSession()
+        console.log("Session data:", sessionData)
 
-        console.log("Session in login page:", session)
-
-        if (session) {
+        if (sessionData.session) {
           // Check if user is an admin
           const { data: userData, error } = await supabase
             .from("users")
             .select("*")
-            .eq("email", session.user.email)
+            .eq("email", sessionData.session.user.email)
             .single()
 
           console.log("User data:", userData, "Error:", error)
@@ -62,13 +79,18 @@ export default function AdminLogin() {
     setIsLoading(true)
     setError("")
     setSuccess("")
+    setDebugInfo(null)
 
     try {
       const formData = new FormData(e.currentTarget)
       const email = formData.get("email") as string
       const password = formData.get("password") as string
 
+      console.log("Attempting login with:", email)
       const supabase = createBrowserSupabaseClient()
+
+      // Sign out any existing session first
+      await supabase.auth.signOut()
 
       // Try to sign in with Supabase Auth
       const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
@@ -76,10 +98,28 @@ export default function AdminLogin() {
         password,
       })
 
+      console.log("Auth response:", authData, authError)
+
       if (authError) {
-        console.error("Login error:", authError)
-        setError("Invalid credentials. Please check your email and password.")
-        setIsLoading(false)
+        console.error("Client login failed, trying direct login API...")
+
+        // Try the direct login API as a fallback
+        const directResult = await directLogin(email, password)
+
+        if (!directResult.success) {
+          setError(directResult.message || "Login failed")
+          setDebugInfo({ directLoginError: directResult })
+          setIsLoading(false)
+          return
+        }
+
+        setSuccess("Login successful via API! Redirecting...")
+
+        // Redirect to admin after successful direct login
+        setTimeout(() => {
+          window.location.href = "/admin"
+        }, 1000)
+
         return
       }
 
@@ -90,7 +130,17 @@ export default function AdminLogin() {
         .eq("email", email)
         .single()
 
-      if (userError || !existingUser || !existingUser.is_admin) {
+      console.log("User data:", existingUser, "Error:", userError)
+
+      if (userError) {
+        console.error("User query error:", userError)
+        setError(`Error fetching user data: ${userError.message}`)
+        setDebugInfo({ authData, userError })
+        setIsLoading(false)
+        return
+      }
+
+      if (!existingUser || !existingUser.is_admin) {
         // Sign out if not an admin
         await supabase.auth.signOut()
         setError("You don't have admin privileges")
@@ -105,13 +155,21 @@ export default function AdminLogin() {
 
       setSuccess("Login successful! Redirecting...")
 
+      // Force a session refresh
+      await supabase.auth.refreshSession()
+
+      // Get the session again to verify
+      const { data: sessionData } = await supabase.auth.getSession()
+      console.log("Session after login:", sessionData)
+
       // Use window.location for a hard redirect
       setTimeout(() => {
         window.location.href = "/admin"
       }, 1000)
-    } catch (error) {
+    } catch (error: any) {
       console.error("Login error:", error)
-      setError("An unexpected error occurred")
+      setError(`An unexpected error occurred: ${error.message}`)
+      setDebugInfo({ error: error.message, stack: error.stack })
     } finally {
       setIsLoading(false)
     }
@@ -133,9 +191,9 @@ export default function AdminLogin() {
       } else {
         setError(result.message)
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error creating test user:", error)
-      setError("Failed to create test user")
+      setError(`Failed to create test user: ${error.message}`)
     } finally {
       setIsCreatingTestUser(false)
     }
@@ -157,9 +215,9 @@ export default function AdminLogin() {
       } else {
         setError(result.message)
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error resetting admin password:", error)
-      setError("Failed to reset admin password")
+      setError(`Failed to reset admin password: ${error.message}`)
     } finally {
       setIsResettingPassword(false)
     }
@@ -265,6 +323,13 @@ export default function AdminLogin() {
             Back to Home
           </Link>
         </div>
+
+        {debugInfo && (
+          <div className="mt-6 p-4 bg-gray-100 rounded-md">
+            <h3 className="text-sm font-medium mb-2">Debug Information</h3>
+            <pre className="text-xs overflow-auto max-h-40">{JSON.stringify(debugInfo, null, 2)}</pre>
+          </div>
+        )}
       </div>
     </div>
   )
